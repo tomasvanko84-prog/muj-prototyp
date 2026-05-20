@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zápisník nápadů & schůzek</title>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #242433;
+      --primary: #7c6af5;
+      --primary-hover: #6a58e3;
+      --danger: #f5546a;
+      --success: #4caf82;
+      --text: #e8e8f0;
+      --text-muted: #888899;
+      --border: rgba(255,255,255,0.08);
+      --radius: 16px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px 16px 80px;
+    }
+
+    .container { max-width: 680px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #7c6af5 0%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p { color: var(--text-muted); font-size: 0.87rem; margin-top: 7px; }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    /* ── API key ── */
+    .api-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .api-input {
+      flex: 1;
+      padding: 10px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .api-input:focus { border-color: var(--primary); }
+    .api-input::placeholder { color: var(--text-muted); font-family: inherit; }
+    .api-status {
+      font-size: 0.8rem;
+      white-space: nowrap;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    .api-status.ok  { background: rgba(76,175,130,0.15); color: #6fd4a8; }
+    .api-status.err { background: rgba(245,84,106,0.15); color: #f5546a; }
+    .api-status.empty { color: var(--text-muted); }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    /* ── Type selector ── */
+    .type-selector { display: flex; gap: 8px; margin-bottom: 24px; }
+    .type-btn {
+      flex: 1;
+      padding: 11px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+    .type-btn.active {
+      border-color: var(--primary);
+      background: rgba(124,106,245,0.15);
+      color: var(--text);
+    }
+    .type-btn:hover:not(.active) { border-color: rgba(124,106,245,0.4); color: var(--text); }
+
+    /* ── Record center ── */
+    .record-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .timer {
+      font-size: 2.5rem;
+      font-weight: 300;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 3px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .timer.visible { opacity: 1; }
+
+    .waveform {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      height: 44px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .waveform.visible { opacity: 1; }
+    .waveform-bar {
+      width: 4px;
+      background: var(--primary);
+      border-radius: 3px;
+      height: 8px;
+    }
+    .waveform.active .waveform-bar { animation: wave 1.1s ease-in-out infinite; }
+    .waveform-bar:nth-child(1) { animation-delay: 0.0s; }
+    .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
+    .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
+    .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
+    .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+    .waveform-bar:nth-child(6) { animation-delay: 0.3s; }
+    .waveform-bar:nth-child(7) { animation-delay: 0.2s; }
+    .waveform-bar:nth-child(8) { animation-delay: 0.1s; }
+    .waveform-bar:nth-child(9) { animation-delay: 0.0s; }
+    @keyframes wave {
+      0%, 100% { height: 8px; }
+      50% { height: 36px; }
+    }
+
+    .btn-record {
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      border: none;
+      background: var(--primary);
+      color: white;
+      font-size: 2rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 24px rgba(124,106,245,0.35);
+    }
+    .btn-record:hover { background: var(--primary-hover); transform: scale(1.06); }
+    .btn-record:active { transform: scale(0.97); }
+    .btn-record.recording {
+      background: var(--danger);
+      box-shadow: 0 4px 24px rgba(245,84,106,0.4);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    .btn-record:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 4px 24px rgba(245,84,106,0.4); }
+      50%       { box-shadow: 0 4px 40px rgba(245,84,106,0.0); }
+    }
+
+    /* Live transcript */
+    .transcript-live {
+      width: 100%;
+      background: var(--surface2);
+      border-radius: 12px;
+      padding: 14px 16px;
+      min-height: 56px;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      display: none;
+    }
+    .transcript-live.visible { display: block; }
+    #interimText { color: var(--text-muted); font-style: italic; }
+
+    /* ── Processing state ── */
+    .processing {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 0;
+    }
+    .processing.visible { display: flex; }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .processing p { color: var(--text-muted); font-size: 0.9rem; }
+
+    /* ── Review panel ── */
+    .review-panel { display: none; flex-direction: column; gap: 14px; width: 100%; }
+    .review-panel.visible { display: flex; }
+
+    .transcript-box {
+      background: var(--surface2);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 0.92rem;
+      line-height: 1.7;
+      max-height: 260px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .transcript-box .empty-note { color: var(--text-muted); font-style: italic; }
+
+    .raw-toggle {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+      text-align: left;
+      padding: 0;
+    }
+    .raw-toggle:hover { color: var(--text); }
+
+    .raw-box {
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .raw-box.visible { display: block; }
+
+    .title-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .title-input:focus { border-color: var(--primary); }
+    .title-input::placeholder { color: var(--text-muted); }
+
+    .review-actions { display: flex; gap: 10px; }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 11px 22px;
+      border-radius: 10px;
+      border: none;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+    .btn-primary { background: var(--primary); color: white; flex: 1; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { color: var(--text); }
+
+    /* ── Notice ── */
+    .notice { font-size: 0.78rem; color: var(--text-muted); text-align: center; margin-top: 8px; }
+    .notice.error { color: var(--danger); }
+
+    /* ── List ── */
+    .list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .list-header h2 { font-size: 1.05rem; font-weight: 600; }
+    .list-count { color: var(--text-muted); font-size: 0.82rem; }
+
+    .list-empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 44px 20px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px dashed var(--border);
+      font-size: 0.88rem;
+      line-height: 1.7;
+    }
+
+    /* ── Recording item ── */
+    .recording-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .recording-item:hover { border-color: rgba(124,106,245,0.3); }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .item-title { font-weight: 600; font-size: 0.98rem; line-height: 1.3; }
+    .item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+
+    .badge {
+      font-size: 0.72rem;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .badge-idea    { background: rgba(124,106,245,0.18); color: #a89af7; }
+    .badge-meeting { background: rgba(76,175,130,0.18);  color: #6fd4a8; }
+    .badge-date    { background: var(--surface2); color: var(--text-muted); }
+    .badge-ai      { background: rgba(192,132,252,0.15); color: #c084fc; }
+
+    .item-transcript {
+      font-size: 0.87rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 12px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: pre-wrap;
+    }
+    .item-transcript.expanded {
+      display: block;
+      -webkit-line-clamp: unset;
+    }
+
+    .btn-expand {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 10px;
+    }
+
+    .btn-delete {
+      flex-shrink: 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-delete:hover { border-color: var(--danger); color: var(--danger); }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Zápisník nápadů & schůzek</h1>
+    <p>Nahrajte hlas → Claude opraví přepis a vytvoří strukturované poznámky</p>
+  </header>
+
+  <!-- ── API klíč ─────────────────────────────────────────────── -->
+  <div class="panel">
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">
+      Anthropic API klíč (uložen jen v prohlížeči, nikam se neodesílá)
+    </div>
+    <div class="api-row">
+      <input type="password" class="api-input" id="apiKeyInput"
+             placeholder="sk-ant-…"
+             oninput="onApiKeyInput(this.value)">
+      <span class="api-status empty" id="apiStatus">—</span>
+    </div>
+  </div>
+
+  <!-- ── Nahrávání ────────────────────────────────────────────── -->
+  <div class="panel">
+
+    <!-- Typ záznamu -->
+    <div class="type-selector" id="typeSelector">
+      <button class="type-btn active" data-type="idea"    onclick="selectType('idea')">💡 Nápad</button>
+      <button class="type-btn"        data-type="meeting" onclick="selectType('meeting')">📋 Schůzka</button>
+    </div>
+
+    <!-- Idle / nahrávání -->
+    <div class="record-center" id="recordCenter">
+      <div class="waveform" id="waveform">
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div><div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+      </div>
+      <div class="timer" id="timer">0:00</div>
+      <button class="btn-record" id="btnRecord" onclick="toggleRecording()">🎙️</button>
+      <div class="transcript-live" id="transcriptLive">
+        <span id="finalText"></span><span id="interimText"></span>
+      </div>
+    </div>
+
+    <!-- Zpracování Claudem -->
+    <div class="processing" id="processing">
+      <div class="spinner"></div>
+      <p>Claude zpracovává přepis…</p>
+    </div>
+
+    <!-- Přehled výsledku -->
+    <div class="review-panel" id="reviewPanel">
+      <div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;">
+          ✨ Přepis upravený Claudem
+        </div>
+        <div class="transcript-box" id="transcriptPolished"></div>
+      </div>
+      <div>
+        <button class="raw-toggle" onclick="toggleRaw()">▶ Zobrazit surový přepis</button>
+        <div class="raw-box" id="transcriptRaw"></div>
+      </div>
+      <input type="text" class="title-input" id="titleInput"
+             placeholder="Název záznamu (volitelné)…" maxlength="120">
+      <div class="review-actions">
+        <button class="btn btn-secondary" onclick="discardRecording()">Zahodit</button>
+        <button class="btn btn-primary"   onclick="saveRecording()">Uložit záznam</button>
+      </div>
+    </div>
+
+    <p class="notice" id="notice">
+      Přepis hlas→text funguje v Chrome a Edge &nbsp;·&nbsp; Claude přepis dočistí a strukturuje
+    </p>
+  </div>
+
+  <!-- ── Seznam záznamů ───────────────────────────────────────── -->
+  <div class="list-header">
+    <h2>Záznamy</h2>
+    <span class="list-count" id="listCount"></span>
+  </div>
+  <div id="recordingsList"></div>
+
+</div>
+
+<script>
+// ─── Stav ──────────────────────────────────────────────────────────────────
+let appState = 'idle';   // idle | recording | processing | review
+let currentType = 'idea';
+let mediaRecorder = null;
+let recognition = null;
+let rawTranscript = '';
+let polishedTranscript = '';
+let timerHandle = null;
+let elapsedSec = 0;
+let db = null;
+let rawShown = false;
+
+// ─── IndexedDB ─────────────────────────────────────────────────────────────
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('napady-v2', 1);
+    req.onupgradeneeded = e =>
+      e.target.result.createObjectStore('recordings', { keyPath: 'id' });
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+const dbOp = (mode, fn) => new Promise((res, rej) => {
+  const tx = db.transaction('recordings', mode);
+  fn(tx.objectStore('recordings'), res, rej);
+  tx.onerror = e => rej(e.target.error);
+});
+const dbPut    = r  => dbOp('readwrite', (s, ok, err) => { s.put(r); s.transaction.oncomplete = ok; });
+const dbGetAll = () => dbOp('readonly',  (s, ok, err) => { const q = s.getAll(); q.onsuccess = e => ok(e.target.result); q.onerror = err; });
+const dbDelete = id => dbOp('readwrite', (s, ok, err) => { s.delete(id); s.transaction.oncomplete = ok; });
+
+// ─── API klíč ──────────────────────────────────────────────────────────────
+function onApiKeyInput(val) {
+  val = val.trim();
+  localStorage.setItem('anthropic_api_key', val);
+  updateApiStatus(val);
+}
+
+function updateApiStatus(val) {
+  const el = document.getElementById('apiStatus');
+  if (!val) {
+    el.textContent = '—';
+    el.className = 'api-status empty';
+  } else if (val.startsWith('sk-ant-')) {
+    el.textContent = '✓ uložen';
+    el.className = 'api-status ok';
+  } else {
+    el.textContent = '⚠ neplatný formát';
+    el.className = 'api-status err';
+  }
+}
+
+function getApiKey() { return (localStorage.getItem('anthropic_api_key') || '').trim(); }
+
+// ─── Typ záznamu ───────────────────────────────────────────────────────────
+function selectType(t) {
+  if (appState !== 'idle') return;
+  currentType = t;
+  document.querySelectorAll('.type-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.type === t));
+}
+
+// ─── Časovač ───────────────────────────────────────────────────────────────
+function startTimer() {
+  elapsedSec = 0;
+  tickTimer();
+  timerHandle = setInterval(tickTimer, 1000);
+}
+function stopTimer()  { clearInterval(timerHandle); }
+function tickTimer()  {
+  elapsedSec++;
+  const m = Math.floor(elapsedSec / 60);
+  const s = elapsedSec % 60;
+  document.getElementById('timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+// ─── Speech recognition ────────────────────────────────────────────────────
+function startRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    setNotice('⚠ Váš prohlížeč nepodporuje Speech-to-Text — použijte Chrome nebo Edge.');
+    return;
+  }
+  rawTranscript = '';
+  recognition = new SR();
+  recognition.lang = 'cs-CZ';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) rawTranscript += e.results[i][0].transcript + ' ';
+      else interim += e.results[i][0].transcript;
+    }
+    document.getElementById('finalText').textContent   = rawTranscript;
+    document.getElementById('interimText').textContent = interim;
+  };
+
+  recognition.onerror = e => {
+    if (e.error === 'not-allowed') setNotice('Přístup k mikrofonu byl zamítnut.', true);
+  };
+
+  // Restartuje se automaticky, prohlížeč zastavuje po pauze
+  recognition.onend = () => {
+    if (appState === 'recording' && recognition) {
+      try { recognition.start(); } catch (_) {}
+    }
+  };
+
+  try { recognition.start(); } catch (_) {}
+}
+
+function stopRecognition() {
+  if (!recognition) return;
+  recognition.onend = null;
+  try { recognition.stop(); } catch (_) {}
+  recognition = null;
+}
+
+// ─── Nahrávání ─────────────────────────────────────────────────────────────
+async function toggleRecording() {
+  if (appState === 'idle')      await startRecording();
+  else if (appState === 'recording') stopRecording();
+}
+
+async function startRecording() {
+  const key = getApiKey();
+  if (!key || !key.startsWith('sk-ant-')) {
+    setNotice('Nejprve zadejte platný Anthropic API klíč (sk-ant-…).', true);
+    document.getElementById('apiKeyInput').focus();
+    return;
+  }
+
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setNotice('Nepodařilo se získat přístup k mikrofonu: ' + e.message, true);
+    return;
+  }
+
+  appState = 'recording';
+
+  const btn = document.getElementById('btnRecord');
+  btn.classList.add('recording');
+  btn.title = 'Zastavit nahrávání';
+  btn.textContent = '⏹';
+
+  document.getElementById('waveform').classList.add('visible', 'active');
+  document.getElementById('timer').classList.add('visible');
+  document.getElementById('transcriptLive').classList.add('visible');
+  lockTypeSelector(true);
+
+  startTimer();
+  startRecognition();
+}
+
+function stopRecording() {
+  appState = 'processing';
+  stopRecognition();
+  stopTimer();
+
+  // Reset recording UI
+  const btn = document.getElementById('btnRecord');
+  btn.classList.remove('recording');
+  btn.textContent = '🎙️';
+  btn.disabled = true;
+
+  document.getElementById('waveform').classList.remove('active');
+  document.getElementById('timer').classList.remove('visible');
+  document.getElementById('transcriptLive').classList.remove('visible');
+
+  processWithClaude();
+}
+
+// ─── Claude API ────────────────────────────────────────────────────────────
+const SYSTEM_PROMPTS = {
+  idea: `Jsi asistent, který zpracovává surový přepis mluveného nápadu.
+Přepis může obsahovat chyby, opakování a chybět interpunkce.
+Úkol: Vytvoř čistý, srozumitelný text. Oprav gramatiku, přidej interpunkci, odstraň zbytečná opakování.
+Zachovej původní myšlenky. Odpovídej česky. Vrať pouze vyčištěný text, bez komentářů.`,
+
+  meeting: `Jsi asistent, který zpracovává surový přepis ze schůzky.
+Přepis může obsahovat chyby, opakování a chybět interpunkce.
+Úkol: Vytvoř strukturované poznámky ze schůzky v tomto formátu:
+## Shrnutí
+(1–2 věty o čem schůzka byla)
+
+## Klíčové body
+- bod 1
+- bod 2
+
+## Rozhodnutí & úkoly
+- úkol/rozhodnutí 1
+
+Zachovej česky. Vrať pouze strukturované poznámky, bez dalších komentářů.`,
+};
+
+async function processWithClaude() {
+  document.getElementById('recordCenter').style.display = 'none';
+  document.getElementById('processing').classList.add('visible');
+
+  const raw = rawTranscript.trim();
+
+  if (!raw) {
+    // Nic nezachytil speech API
+    polishedTranscript = '';
+    showReview();
+    return;
+  }
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': getApiKey(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: SYSTEM_PROMPTS[currentType],
+        messages: [{ role: 'user', content: raw }],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    polishedTranscript = data.content[0].text.trim();
+
+  } catch (e) {
+    polishedTranscript = '';
+    setNotice('Chyba Claude API: ' + e.message, true);
+  }
+
+  showReview();
+}
+
+function showReview() {
+  appState = 'review';
+
+  document.getElementById('processing').classList.remove('visible');
+
+  // Polished transcript
+  const pb = document.getElementById('transcriptPolished');
+  pb.textContent = polishedTranscript || '(Claude neposkytl výsledek — zkontrolujte API klíč)';
+  if (!polishedTranscript) pb.innerHTML = '<span class="empty-note">(Claude neposkytl výsledek — zkontrolujte API klíč)</span>';
+
+  // Raw transcript
+  const rb = document.getElementById('transcriptRaw');
+  rb.textContent = rawTranscript.trim() || '(žádný přepis)';
+  rawShown = false;
+  document.querySelector('.raw-toggle').textContent = '▶ Zobrazit surový přepis';
+  rb.classList.remove('visible');
+
+  document.getElementById('titleInput').value = '';
+  document.getElementById('reviewPanel').classList.add('visible');
+  lockTypeSelector(false);
+
+  setTimeout(() => document.getElementById('titleInput').focus(), 50);
+}
+
+function toggleRaw() {
+  rawShown = !rawShown;
+  document.getElementById('transcriptRaw').classList.toggle('visible', rawShown);
+  document.querySelector('.raw-toggle').textContent =
+    rawShown ? '▼ Skrýt surový přepis' : '▶ Zobrazit surový přepis';
+}
+
+// ─── Uložení ───────────────────────────────────────────────────────────────
+async function saveRecording() {
+  const now = new Date();
+  const dateStr = now.toLocaleString('cs-CZ', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
+  const rawTitle = document.getElementById('titleInput').value.trim();
+  const title = rawTitle || `${currentType === 'idea' ? 'Nápad' : 'Schůzka'} ${dateStr}`;
+
+  await dbPut({
+    id:         now.getTime().toString(),
+    title,
+    type:       currentType,
+    date:       now.toISOString(),
+    transcript: polishedTranscript,
+    raw:        rawTranscript.trim(),
+    duration:   elapsedSec,
+    aiUsed:     !!polishedTranscript,
+  });
+
+  resetUI();
+  renderList();
+}
+
+function discardRecording() { resetUI(); }
+
+function resetUI() {
+  appState = 'idle';
+
+  document.getElementById('recordCenter').style.display = '';
+  document.getElementById('processing').classList.remove('visible');
+  document.getElementById('reviewPanel').classList.remove('visible');
+  document.getElementById('waveform').classList.remove('visible', 'active');
+  document.getElementById('timer').classList.remove('visible');
+  document.getElementById('transcriptLive').classList.remove('visible');
+  document.getElementById('finalText').textContent   = '';
+  document.getElementById('interimText').textContent = '';
+
+  const btn = document.getElementById('btnRecord');
+  btn.classList.remove('recording');
+  btn.disabled = false;
+  btn.textContent = '🎙️';
+  btn.title = 'Spustit nahrávání';
+
+  lockTypeSelector(false);
+  setNotice('Přepis hlas→text funguje v Chrome a Edge · Claude přepis dočistí a strukturuje');
+}
+
+function lockTypeSelector(locked) {
+  const sel = document.getElementById('typeSelector');
+  sel.style.opacity      = locked ? '0.45' : '1';
+  sel.style.pointerEvents = locked ? 'none' : '';
+}
+
+function setNotice(msg, isError = false) {
+  const el = document.getElementById('notice');
+  el.textContent = msg;
+  el.className = 'notice' + (isError ? ' error' : '');
+}
+
+// ─── Seznam záznamů ────────────────────────────────────────────────────────
+async function renderList() {
+  const records = await dbGetAll();
+  records.sort((a, b) => b.date.localeCompare(a.date));
+
+  const list  = document.getElementById('recordingsList');
+  const count = document.getElementById('listCount');
+  const n = records.length;
+
+  count.textContent = n ? `${n} záznam${n > 4 ? 'ů' : n > 1 ? 'y' : ''}` : '';
+
+  if (!n) {
+    list.innerHTML = '<div class="list-empty">Zatím žádné záznamy.<br>Stiskněte 🎙️ a nahrajte svůj první nápad!</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  for (const r of records) list.appendChild(buildItem(r));
+}
+
+function buildItem(r) {
+  const div = document.createElement('div');
+  div.className = 'recording-item';
+
+  const date = new Date(r.date).toLocaleString('cs-CZ', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+  const dur = r.duration
+    ? `${Math.floor(r.duration / 60)}:${(r.duration % 60).toString().padStart(2,'0')}`
+    : null;
+
+  const text = r.transcript || r.raw || '(žádný přepis)';
+  const isLong = text.length > 220;
+
+  div.innerHTML = `
+    <div class="item-header">
+      <div style="min-width:0">
+        <div class="item-title">${esc(r.title)}</div>
+        <div class="item-meta">
+          <span class="badge ${r.type === 'idea' ? 'badge-idea' : 'badge-meeting'}">
+            ${r.type === 'idea' ? '💡 Nápad' : '📋 Schůzka'}
+          </span>
+          ${r.aiUsed ? '<span class="badge badge-ai">✨ Claude</span>' : ''}
+          <span class="badge badge-date">${date}</span>
+          ${dur ? `<span class="badge badge-date">⏱ ${dur}</span>` : ''}
+        </div>
+      </div>
+      <button class="btn-delete" onclick="deleteRec('${r.id}')">Smazat</button>
+    </div>
+    <div class="item-transcript" id="tr-${r.id}">${esc(text)}</div>
+    ${isLong ? `<button class="btn-expand" id="exp-${r.id}" onclick="toggleExpand('${r.id}')">Zobrazit celý přepis ↓</button>` : ''}
+  `;
+
+  return div;
+}
+
+function toggleExpand(id) {
+  const tr  = document.getElementById(`tr-${id}`);
+  const btn = document.getElementById(`exp-${id}`);
+  const expanded = tr.classList.toggle('expanded');
+  btn.textContent = expanded ? 'Skrýt ↑' : 'Zobrazit celý přepis ↓';
+}
+
+async function deleteRec(id) {
+  if (!confirm('Opravdu smazat tento záznam?')) return;
+  await dbDelete(id);
+  renderList();
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+const savedKey = localStorage.getItem('anthropic_api_key') || '';
+if (savedKey) {
+  document.getElementById('apiKeyInput').value = savedKey;
+  updateApiStatus(savedKey);
+}
+
+openDB()
+  .then(d => { db = d; renderList(); })
+  .catch(e => setNotice('Chyba databáze: ' + e.message, true));
+</script>
+</body>
+</html>
