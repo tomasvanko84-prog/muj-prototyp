@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Line Sim</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    background:#000; color:#eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action:none; user-select:none;
+  }
+  #stage {
+    position:fixed; inset:0;
+    transition: filter .4s ease;
+  }
+  #stage.high {
+    animation: highwave 2.5s ease-in-out infinite;
+  }
+  @keyframes highwave {
+    0%,100% { filter: hue-rotate(0deg) saturate(1.1) brightness(1); }
+    50% { filter: hue-rotate(25deg) saturate(1.6) brightness(1.15); }
+  }
+  #shakewrap.shake {
+    animation: shake .35s ease;
+  }
+  @keyframes shake {
+    0% { transform: translate(0,0); }
+    20% { transform: translate(-6px,3px) rotate(-0.4deg); }
+    40% { transform: translate(5px,-4px) rotate(0.4deg); }
+    60% { transform: translate(-4px,4px) rotate(-0.3deg); }
+    80% { transform: translate(4px,-2px) rotate(0.3deg); }
+    100% { transform: translate(0,0); }
+  }
+  canvas { display:block; width:100%; height:100%; }
+
+  #flash {
+    position:fixed; inset:0; background:#fff; opacity:0;
+    pointer-events:none; z-index:50;
+  }
+  #flash.on { animation: flashfx .5s ease-out; }
+  @keyframes flashfx {
+    0% { opacity:.85; }
+    100% { opacity:0; }
+  }
+
+  #hud {
+    position:fixed; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: max(14px, env(safe-area-inset-top)) 16px 10px;
+    z-index:20; pointer-events:none;
+  }
+  #hud .score {
+    pointer-events:auto;
+    font-size:14px; letter-spacing:.03em; color:#aaa;
+    background:rgba(255,255,255,.06); padding:6px 12px; border-radius:20px;
+    backdrop-filter: blur(6px);
+  }
+  #hud .score b { color:#fff; font-weight:700; }
+
+  #modebar {
+    position:fixed; left:50%; bottom: max(22px, env(safe-area-inset-bottom));
+    transform:translateX(-50%);
+    display:flex; gap:10px; z-index:20;
+  }
+  .btn {
+    pointer-events:auto;
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(20,20,20,.7);
+    color:#eee; font-size:14px; font-weight:600;
+    padding:12px 18px; border-radius:999px;
+    backdrop-filter: blur(8px);
+    display:flex; align-items:center; gap:8px;
+    transition: transform .12s ease, background .2s ease, border-color .2s ease;
+  }
+  .btn:active { transform:scale(.94); }
+  .btn.active {
+    background:rgba(255,255,255,.92); color:#111;
+    border-color:transparent;
+  }
+  .btn .emoji { font-size:18px; }
+
+  #clearBtn {
+    position:fixed; top:0; right:0;
+    margin: max(14px, env(safe-area-inset-top)) 16px 0 0;
+    pointer-events:auto;
+    z-index:21;
+    font-size:13px; padding:8px 14px;
+    opacity:.7;
+  }
+
+  #nose {
+    position:fixed; top:0; left:0; font-size:30px;
+    transform: translate(-9999px,-9999px);
+    pointer-events:none; z-index:30;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,.6));
+  }
+
+  #hint {
+    position:fixed; left:50%; top:14px; transform:translateX(-50%);
+    font-size:12px; color:rgba(255,255,255,.45);
+    text-align:center; z-index:19; pointer-events:none;
+    max-width:80vw;
+  }
+
+  #disclaimer {
+    position:fixed; bottom: max(78px, calc(env(safe-area-inset-bottom) + 60px));
+    left:50%; transform:translateX(-50%);
+    font-size:10.5px; color:rgba(255,255,255,.28);
+    text-align:center; z-index:19; pointer-events:none;
+    letter-spacing:.02em;
+  }
+</style>
+</head>
+<body>
+  <div id="shakewrap">
+    <div id="stage">
+      <canvas id="c"></canvas>
+    </div>
+  </div>
+
+  <div id="flash"></div>
+  <div id="nose">👃</div>
+
+  <div id="hud">
+    <div class="score">Šňupnuto: <b id="scoreVal">0</b></div>
+    <div style="width:1px"></div>
+  </div>
+
+  <button id="clearBtn" class="btn">🧹 Smazat stůl</button>
+
+  <div id="hint">Přepni na "Sypat" a tahem prstem si nakresli linku, pak přepni na "Šňupat" a přejeď po ní.</div>
+
+  <div id="modebar">
+    <button id="modeDraw" class="btn active"><span class="emoji">🥄</span>Sypat</button>
+    <button id="modeSniff" class="btn"><span class="emoji">👃</span>Šňupat</button>
+  </div>
+
+  <div id="disclaimer">recesní appka pro srandu, žádné reálné látky 🙂</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const shakewrap = document.getElementById('shakewrap');
+  const flashEl = document.getElementById('flash');
+  const noseEl = document.getElementById('nose');
+  const scoreVal = document.getElementById('scoreVal');
+  const modeDraw = document.getElementById('modeDraw');
+  const modeSniff = document.getElementById('modeSniff');
+  const clearBtn = document.getElementById('clearBtn');
+  const hint = document.getElementById('hint');
+
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0, H = 0;
+
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  let mode = 'draw'; // 'draw' | 'sniff'
+  let score = 0;
+  let lines = []; // {pts:[{x,y}], grains:[{x,y,t,r,o}], len, consumedT}
+
+  function setMode(m) {
+    mode = m;
+    modeDraw.classList.toggle('active', m === 'draw');
+    modeSniff.classList.toggle('active', m === 'sniff');
+    noseEl.style.transform = 'translate(-9999px,-9999px)';
+    hint.style.opacity = 1;
+  }
+  modeDraw.addEventListener('click', () => setMode('draw'));
+  modeSniff.addEventListener('click', () => setMode('sniff'));
+
+  clearBtn.addEventListener('click', () => { lines = []; draw(); });
+
+  // ---------- drawing (creating lines) ----------
+  let curPts = null;
+
+  function pointerPos(e) {
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+  }
+
+  function buildGrains(pts) {
+    // cumulative length + t param
+    let total = 0;
+    const segLens = [];
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+      segLens.push(d); total += d;
+    }
+    const grains = [];
+    let acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i-1], b = pts[i];
+      const segLen = segLens[i-1] || 0.0001;
+      const density = Math.max(2, Math.round(segLen / 2.2));
+      for (let j = 0; j < density; j++) {
+        const f = j / density;
+        const gx = a.x + (b.x - a.x) * f + (Math.random()-0.5) * 6;
+        const gy = a.y + (b.y - a.y) * f + (Math.random()-0.5) * 6;
+        const t = total > 0 ? (acc + segLen * f) / total : 0;
+        grains.push({
+          x: gx, y: gy, t,
+          r: 0.6 + Math.random() * 1.6,
+          o: 0.35 + Math.random() * 0.55
+        });
+      }
+      acc += segLen;
+    }
+    return { grains, len: total };
+  }
+
+  function startDraw(pos) {
+    curPts = [pos];
+  }
+  function moveDraw(pos) {
+    if (!curPts) return;
+    const last = curPts[curPts.length - 1];
+    if (Math.hypot(pos.x - last.x, pos.y - last.y) > 4) curPts.push(pos);
+  }
+  function endDraw() {
+    if (curPts && curPts.length > 1) {
+      const { grains, len } = buildGrains(curPts);
+      if (len > 20) {
+        lines.push({ grains, len, consumedT: 0, id: Math.random() });
+      }
+    }
+    curPts = null;
+  }
+
+  // ---------- sniffing (consuming lines) ----------
+  let activeLine = null;
+
+  function nearestOnLine(line, pos) {
+    let best = -1, bestD = Infinity;
+    for (const g of line.grains) {
+      if (g.t < line.consumedT - 0.02) continue;
+      const d = Math.hypot(g.x - pos.x, g.y - pos.y);
+      if (d < bestD) { bestD = d; best = g.t; }
+    }
+    return { t: best, d: bestD };
+  }
+
+  function startSniff(pos) {
+    let best = null, bestD = 46;
+    for (const line of lines) {
+      const { t, d } = nearestOnLine(line, pos);
+      if (t >= 0 && d < bestD) { bestD = d; best = line; }
+    }
+    activeLine = best;
+    updateNose(pos);
+  }
+
+  function moveSniff(pos) {
+    updateNose(pos);
+    if (!activeLine) { startSniff(pos); return; }
+    const { t, d } = nearestOnLine(activeLine, pos);
+    if (t >= 0 && d < 60) {
+      if (t > activeLine.consumedT) activeLine.consumedT = t;
+      if (activeLine.consumedT >= 0.985) finishLine(activeLine, pos);
+    }
+  }
+
+  function endSniff() {
+    activeLine = null;
+    noseEl.style.transform = 'translate(-9999px,-9999px)';
+  }
+
+  function updateNose(pos) {
+    if (mode !== 'sniff') return;
+    noseEl.style.transform = `translate(${pos.x - 15}px, ${pos.y - 22}px)`;
+  }
+
+  function finishLine(line, pos) {
+    lines = lines.filter(l => l !== line);
+    activeLine = null;
+    score++;
+    scoreVal.textContent = score;
+    burstEffect(pos);
+  }
+
+  // ---------- effects ----------
+  let particles = [];
+  function burstEffect(pos) {
+    flashEl.classList.remove('on'); void flashEl.offsetWidth; flashEl.classList.add('on');
+    shakewrap.classList.remove('shake'); void shakewrap.offsetWidth; shakewrap.classList.add('shake');
+    stage.classList.add('high');
+    clearTimeout(stage._highTimer);
+    stage._highTimer = setTimeout(() => stage.classList.remove('high'), 2600);
+
+    for (let i = 0; i < 26; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 1.5 + Math.random() * 5;
+      particles.push({
+        x: pos.x, y: pos.y,
+        vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1,
+        life: 1, r: 1 + Math.random() * 2.4
+      });
+    }
+    playSniffSound();
+    navigator.vibrate && navigator.vibrate([12, 20, 12]);
+  }
+
+  // ---------- audio ----------
+  let actx = null;
+  function playSniffSound() {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const dur = 0.42;
+      const bufSize = actx.sampleRate * dur;
+      const buffer = actx.createBuffer(1, bufSize, actx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+
+      const src = actx.createBufferSource();
+      src.buffer = buffer;
+
+      const bandpass = actx.createBiquadFilter();
+      bandpass.type = 'bandpass';
+      bandpass.frequency.setValueAtTime(700, actx.currentTime);
+      bandpass.frequency.linearRampToValueAtTime(3200, actx.currentTime + dur * 0.7);
+      bandpass.Q.value = 0.9;
+
+      const gain = actx.createGain();
+      gain.gain.setValueAtTime(0.0001, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.9, actx.currentTime + dur * 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+
+      src.connect(bandpass).connect(gain).connect(actx.destination);
+      src.start();
+      src.stop(actx.currentTime + dur);
+    } catch (e) { /* audio not available, ignore */ }
+  }
+
+  // ---------- input plumbing ----------
+  function onDown(e) {
+    e.preventDefault();
+    const pos = pointerPos(e);
+    if (mode === 'draw') startDraw(pos);
+    else startSniff(pos);
+  }
+  function onMove(e) {
+    e.preventDefault();
+    const pos = pointerPos(e);
+    if (mode === 'draw') moveDraw(pos);
+    else moveSniff(pos);
+  }
+  function onUp(e) {
+    if (mode === 'draw') endDraw();
+    else endSniff();
+  }
+
+  canvas.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', onDown, { passive:false });
+  window.addEventListener('touchmove', onMove, { passive:false });
+  window.addEventListener('touchend', onUp);
+  window.addEventListener('touchcancel', onUp);
+
+  // ---------- render loop ----------
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // table subtle vignette
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+    grad.addColorStop(0, 'rgba(255,255,255,0.02)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+
+    for (const line of lines) {
+      for (const g of line.grains) {
+        if (g.t < line.consumedT) continue;
+        let fade = 1;
+        if (g.t < line.consumedT + 0.03) fade = (g.t - line.consumedT) / 0.03;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${g.o * fade})`;
+        ctx.shadowColor = 'rgba(255,255,255,0.5)';
+        ctx.shadowBlur = 2;
+        ctx.arc(g.x, g.y, g.r, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    // current in-progress line preview
+    if (curPts && curPts.length > 1) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(curPts[0].x, curPts[0].y);
+      for (let i = 1; i < curPts.length; i++) ctx.lineTo(curPts[i].x, curPts[i].y);
+      ctx.stroke();
+    }
+
+    // particles
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life -= 0.025;
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(255,255,255,${Math.max(p.life,0)})`;
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fill();
+    });
+    particles = particles.filter(p => p.life > 0);
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  // fade hint out after a bit
+  setTimeout(() => { hint.style.transition = 'opacity 1s'; hint.style.opacity = 0; }, 6000);
+})();
+</script>
+</body>
+</html>
